@@ -385,6 +385,18 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <!-- Global error handler to help debug on mobile -->
+  <script>
+    window.addEventListener('error', function(e) {
+        let loading = document.getElementById("loading");
+        if(loading) loading.innerHTML = `<h2 style="color: red; font-size:16px;">Error: ${e.message}</h2>`;
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+        let loading = document.getElementById("loading");
+        if(loading) loading.innerHTML = `<h2 style="color: red; font-size:16px;">Promise Error: ${e.reason}</h2>`;
+    });
+  </script>
 </head>
 <body>
 
@@ -395,7 +407,7 @@
     <p style="color: rgba(255,255,255,0.5); font-size: 14px; text-transform: uppercase;">Awaiting Optical Sensor Input...</p>
   </div>
 
-  <video id="video" autoplay playsinline></video>
+  <video id="video" autoplay playsinline muted></video>
   <canvas id="bg-particles"></canvas>
   <div class="grid-overlay"></div>
   <div id="mode-display">DRAW</div>
@@ -463,7 +475,12 @@
   <script>
     // === AUDIO SYSTEM (Web Audio API) ===
     const AudioContext = window.AudioContext || window.webkitAudioContext;
-    const audioCtx = new AudioContext();
+    let audioCtx = null;
+    try {
+      if (AudioContext) audioCtx = new AudioContext();
+    } catch(e) {
+      console.warn("AudioContext failed to initialize", e);
+    }
 
     const sounds = {
       blip: () => playOscillator('sine', 800, 0.05, 'exponential', 0.1),
@@ -475,6 +492,7 @@
     };
 
     function playOscillator(type, freq, vol, fadeType, duration, endFreq = null) {
+      if (!audioCtx) return;
       if (audioCtx.state === 'suspended') audioCtx.resume();
       const osc = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
