@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+  <title>Air Gesture Studio - Holographic OS</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@400;600;700&display=swap');
+
+    :root {
+      --neon-cyan: #00f3ff;
+      --neon-purple: #b026ff;
+      --neon-blue: #0a44ff;
+      --bg-dark: #030508;
+      --glass-bg: rgba(10, 15, 30, 0.25);
+      --glass-border: rgba(0, 243, 255, 0.2);
+      --font-display: 'Orbitron', sans-serif;
+      --font-body: 'Rajdhani', sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: var(--bg-dark);
+      color: white;
+      font-family: var(--font-body);
+      user-select: none;
+      touch-action: none;
+      /* Animated Gradient Background */
+      background: linear-gradient(45deg, #020111, #080315, #020d1a, #010611);
+      background-size: 400% 400%;
+      animation: gradientBG 20s ease infinite;
+    }
+
+    @keyframes gradientBG {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    /* Video feed - hidden but used for processing */
+    #video {
+      position: absolute;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      object-fit: cover;
+      z-index: 1;
+      opacity: 0.1;
+      transform: scaleX(-1);
+      filter: contrast(1.2) grayscale(1);
+    }
+
+    /* Moving background particles canvas */
+    #bg-particles {
+      position: absolute;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      z-index: 2;
+      pointer-events: none;
+      opacity: 0.4;
+    }
+
+    /* Perspective Grid Overlay */
+    .grid-overlay {
+      position: absolute;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      z-index: 3;
+      background-image: 
+        linear-gradient(rgba(0, 243, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 243, 255, 0.03) 1px, transparent 1px);
+      background-size: 80px 80px;
+      background-position: center center;
+      pointer-events: none;
+      transform: perspective(500px) rotateX(10deg) scale(1.1);
+      transform-origin: center bottom;
+      animation: pulseGrid 4s infinite alternate ease-in-out;
+    }
+
+    @keyframes pulseGrid {
+      0% { opacity: 0.5; }
+      100% { opacity: 1; }
+    }
+
+    /* Main Drawing Canvas */
+    #canvas {
+      position: absolute;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      z-index: 4;
+      pointer-events: none;
+    }
+
+    /* UI Layer */
+    #ui-layer {
+      position: absolute;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      z-index: 5;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 20px;
+    }
+
+    /* Top Bar */
+    #top-bar {
+      text-align: center;
+      padding-top: 10px;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 28px;
+      letter-spacing: 8px;
+      color: rgba(255,255,255,0.9);
+      text-shadow: 0 0 15px var(--neon-cyan), 0 0 30px rgba(0, 243, 255, 0.5);
+      text-transform: uppercase;
+    }
+
+    /* HUD Panel */
+    .hud-panel {
+      position: absolute;
+      bottom: 30px; left: 30px;
+      background: var(--glass-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 15px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 0 20px rgba(0, 243, 255, 0.05);
+      pointer-events: auto;
+      min-width: 200px;
+    }
+
+    .hud-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 1px;
+    }
+
+    .hud-label { color: rgba(255,255,255,0.5); font-size: 12px; text-transform: uppercase; }
+    .hud-value { color: var(--neon-cyan); text-shadow: 0 0 8px var(--neon-cyan); }
+    .hud-value.magenta { color: var(--neon-purple); text-shadow: 0 0 8px var(--neon-purple); }
+
+    /* Radial Menu Base */
+    #radial-menu {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%) scale(0.8);
+      width: 400px; height: 400px;
+      border-radius: 50%;
+      pointer-events: none;
+      opacity: 0;
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      z-index: 10;
+    }
+
+    #radial-menu.active {
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .radial-center {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 60px; height: 60px;
+      border-radius: 50%;
+      background: rgba(0, 243, 255, 0.1);
+      border: 2px solid var(--neon-cyan);
+      box-shadow: 0 0 20px var(--neon-cyan);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .radial-center::after {
+      content: '';
+      width: 20px; height: 20px;
+      background: var(--neon-cyan);
+      border-radius: 50%;
+      box-shadow: 0 0 15px var(--neon-cyan);
+      animation: pulseCenter 2s infinite;
+    }
+
+    @keyframes pulseCenter {
+      0% { transform: scale(0.8); opacity: 0.5; }
+      50% { transform: scale(1.2); opacity: 1; }
+      100% { transform: scale(0.8); opacity: 0.5; }
+    }
+
+    .menu-item {
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 60px; height: 60px;
+      margin: -30px 0 0 -30px;
+      border-radius: 50%;
+      background: var(--glass-bg);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: white;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      font-family: var(--font-body);
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 0 15px rgba(0,0,0,0.5);
+    }
+    
+    .menu-item .icon { font-size: 20px; margin-bottom: 2px; }
+
+    .menu-item:hover, .menu-item.hovered {
+      transform: scale(1.2);
+      background: rgba(0, 243, 255, 0.2);
+      border-color: var(--neon-cyan);
+      box-shadow: 0 0 25px var(--neon-cyan), inset 0 0 15px var(--neon-cyan);
+      color: var(--neon-cyan);
+    }
+
+    .menu-item.active-tool {
+      background: rgba(0, 243, 255, 0.3);
+      border-color: var(--neon-cyan);
+      box-shadow: 0 0 30px var(--neon-cyan);
+      color: var(--neon-cyan);
+    }
+
+    .menu-item.action-btn:hover, .menu-item.action-btn.hovered {
+      border-color: var(--neon-purple);
+      box-shadow: 0 0 25px var(--neon-purple), inset 0 0 15px var(--neon-purple);
+      color: var(--neon-purple);
+      background: rgba(176, 38, 255, 0.2);
+    }
+
+    /* Hand Cursor System */
+    #cursor-container {
+      position: absolute;
+      top: 0; left: 0;
+      pointer-events: none;
+      z-index: 100;
+      mix-blend-mode: screen;
+    }
+
+    .cursor-ring {
+      position: absolute;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      transition: width 0.1s, height 0.1s;
+    }
+
+    #cursor-core {
+      width: 12px; height: 12px;
+      background: #fff;
+      box-shadow: 0 0 10px #fff, 0 0 20px var(--neon-cyan);
+    }
+
+    #cursor-outer {
+      width: 30px; height: 30px;
+      border: 2px solid var(--neon-cyan);
+      box-shadow: 0 0 15px var(--neon-cyan) inset;
+      transition: all 0.15s ease-out;
+    }
+
+    /* Pinch states */
+    .cursor-group.pinching #cursor-core {
+      background: var(--neon-purple);
+      box-shadow: 0 0 10px #fff, 0 0 20px var(--neon-purple);
+      transform: translate(-50%, -50%) scale(0.8);
+    }
+    
+    .cursor-group.pinching #cursor-outer {
+      width: 16px; height: 16px;
+      border-color: var(--neon-purple);
+      border-width: 4px;
+      box-shadow: 0 0 20px var(--neon-purple);
+    }
+
+    /* Ripple Effect */
+    .ripple {
+      position: absolute;
+      border-radius: 50%;
+      border: 2px solid var(--neon-cyan);
+      transform: translate(-50%, -50%) scale(0);
+      opacity: 1;
+      pointer-events: none;
+      animation: rippleAnim 0.6s ease-out forwards;
+    }
+    
+    @keyframes rippleAnim {
+      to { transform: translate(-50%, -50%) scale(3); opacity: 0; border-width: 0px; }
+    }
+
+    /* Central Mode Display */
+    #mode-display {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      font-family: var(--font-display);
+      font-size: 80px;
+      color: rgba(255,255,255,0.03);
+      text-transform: uppercase;
+      letter-spacing: 20px;
+      pointer-events: none;
+      z-index: 1;
+      white-space: nowrap;
+      transition: all 0.5s;
+    }
+
+    /* Gesture Flash Badge */
+    #gesture-badge {
+      position: absolute;
+      top: 30%; left: 50%;
+      transform: translate(-50%, -50%) translateY(20px);
+      background: rgba(0, 243, 255, 0.15);
+      border: 1px solid var(--neon-cyan);
+      padding: 8px 24px;
+      border-radius: 30px;
+      font-family: var(--font-display);
+      font-size: 16px;
+      color: var(--neon-cyan);
+      box-shadow: 0 0 20px rgba(0,243,255,0.4);
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s;
+      z-index: 50;
+    }
+    
+    #gesture-badge.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) translateY(0);
+    }
+
+    /* Loading Screen */
+    #loading {
+      position: absolute;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      background: var(--bg-dark);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      transition: opacity 0.8s;
+    }
+
+    .hologram-loader {
+      width: 80px; height: 80px;
+      position: relative;
+      transform-style: preserve-3d;
+      animation: spin3D 3s linear infinite;
+    }
+
+    .hologram-loader::before, .hologram-loader::after {
+      content: '';
+      position: absolute;
+      width: 100%; height: 100%;
+      border: 2px solid var(--neon-cyan);
+      border-radius: 50%;
+      box-shadow: 0 0 20px var(--neon-cyan), inset 0 0 20px var(--neon-cyan);
+    }
+    
+    .hologram-loader::after {
+      transform: rotateX(60deg) rotateY(45deg);
+      border-color: var(--neon-purple);
+      box-shadow: 0 0 20px var(--neon-purple), inset 0 0 20px var(--neon-purple);
+    }
+
+    @keyframes spin3D {
+      0% { transform: rotateX(0) rotateY(0) rotateZ(0); }
+      100% { transform: rotateX(360deg) rotateY(360deg) rotateZ(360deg); }
+    }
+
+  </style>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+  <!-- Loading Screen -->
+  <div id="loading">
+    <div class="hologram-loader"></div>
+    <h2 style="font-family: var(--font-display); color: var(--neon-cyan); margin-top: 40px; letter-spacing: 5px; text-shadow: 0 0 10px var(--neon-cyan);">SYSTEM BOOT</h2>
+    <p style="color: rgba(255,255,255,0.5); font-size: 14px; text-transform: uppercase;">Awaiting Optical Sensor Input...</p>
+  </div>
+
+  <video id="video" autoplay playsinline></video>
+  <canvas id="bg-particles"></canvas>
+  <div class="grid-overlay"></div>
+  <div id="mode-display">DRAW</div>
+  <canvas id="canvas"></canvas>
+
+  <!-- Cursor UI -->
+  <div id="cursor-container" class="cursor-group" style="display: none;">
+    <div id="cursor-outer" class="cursor-ring"></div>
+    <div id="cursor-core" class="cursor-ring"></div>
+  </div>
+
+  <!-- Gesture Feedback Badge -->
+  <div id="gesture-badge">GESTURE RECOGNIZED</div>
+
+  <!-- Main UI Layer -->
+  <div id="ui-layer">
+    <div id="top-bar">
+      <h1>AIR GESTURE OS</h1>
+    </div>
+
+    <!-- Radial Menu -->
+    <div id="radial-menu">
+      <div class="radial-center"></div>
+      <!-- Items positioned via JS -->
+      <div class="menu-item active-tool" data-tool="DRAW">
+        <span class="icon">✏️</span><span>DRAW</span>
+      </div>
+      <div class="menu-item" data-tool="ERASE">
+        <span class="icon">🧹</span><span>ERASE</span>
+      </div>
+      <div class="menu-item" data-tool="MOVE">
+        <span class="icon">✋</span><span>MOVE</span>
+      </div>
+      <div class="menu-item" data-tool="SCALE">
+        <span class="icon">⬛</span><span>SCALE</span>
+      </div>
+      <div class="menu-item" data-tool="ROTATE">
+        <span class="icon">🔄</span><span>ROTATE</span>
+      </div>
+      <div class="menu-item action-btn" data-action="CLEAR">
+        <span class="icon">🗑️</span><span>CLEAR</span>
+      </div>
+      <div class="menu-item action-btn" data-action="SAVE">
+        <span class="icon">💾</span><span>SAVE</span>
+      </div>
+    </div>
+
+    <!-- HUD Panel -->
+    <div class="hud-panel">
+      <div class="hud-row">
+        <span class="hud-label">MODE</span>
+        <span class="hud-value" id="hud-mode">DRAW</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-label">GESTURE</span>
+        <span class="hud-value" id="hud-gesture" style="color:rgba(255,255,255,0.8); text-shadow:none;">NONE</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-label">FPS</span>
+        <span class="hud-value" id="hud-fps">60</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // === AUDIO SYSTEM (Web Audio API) ===
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioContext();
+
+    const sounds = {
+      blip: () => playOscillator('sine', 800, 0.05, 'exponential', 0.1),
+      grab: () => playOscillator('triangle', 300, 0.1, 'linear', 0.2),
+      release: () => playOscillator('sine', 200, 0.2, 'exponential', 0.3, 100),
+      menuOpen: () => playOscillator('square', 600, 0.1, 'linear', 0.4, 800),
+      menuSelect: () => playOscillator('sine', 1200, 0.05, 'exponential', 0.2),
+      error: () => playOscillator('sawtooth', 150, 0.2, 'linear', 0.2, 100)
+    };
+
+    function playOscillator(type, freq, vol, fadeType, duration, endFreq = null) {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+      if (endFreq) {
+        osc.frequency.exponentialRampToValueAtTime(endFreq, audioCtx.currentTime + duration);
+      }
+      gainNode.gain.setValueAtTime(vol, audioCtx.currentTime);
+      if (fadeType === 'exponential') {
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+      } else {
+        gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + duration);
+      }
+      osc.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration);
+    }
+
+    // === STATE & CONFIG ===
+    let appMode = 'DRAW'; // DRAW, ERASE, MOVE, SCALE, ROTATE
+    let drawings = [];
+    let currentDrawing = null;
+    let activeObject = null;
+    let particles = [];
+    
+    // Smoothing & Hand Tracking
+    let cursorX = window.innerWidth / 2;
+    let cursorY = window.innerHeight / 2;
+    const SMOOTHING = 0.35; // Lower = smoother, higher = more responsive
+    const DEADZONE = 3;
+    let isPinching = false;
+    let wasPinching = false;
+    let pinchFrames = 0;
+    
+    // Action Logic
+    let isDragging = false;
+    let grabOffset = {x: 0, y: 0};
+    let dragVelocity = {x: 0, y: 0};
+    let lastGrabPos = {x: 0, y: 0};
+    let initialScaleDist = null;
+    let initialRotationAngle = null;
+
+    // Radial Menu
+    let menuActive = false;
+    let handStillTime = 0;
+    let lastHandPos = {x: cursorX, y: cursorY};
+    let menuCenter = {x: 0, y: 0};
+
+    // DOM Elements
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const bgCanvas = document.getElementById("bg-particles");
+    const bgCtx = bgCanvas.getContext("2d");
+    const cursorContainer = document.getElementById("cursor-container");
+    const hudMode = document.getElementById("hud-mode");
+    const hudGesture = document.getElementById("hud-gesture");
+    const hudFps = document.getElementById("hud-fps");
+    const modeDisplay = document.getElementById("mode-display");
+    const radialMenu = document.getElementById("radial-menu");
+    const gestureBadge = document.getElementById("gesture-badge");
+
+    // FPS Counter
+    let lastFrameTime = performance.now();
+    let frameCount = 0;
+
+    // === INITIALIZATION ===
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      bgCanvas.width = window.innerWidth;
+      bgCanvas.height = window.innerHeight;
+      initBgParticles();
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Setup Radial Menu Positions
+    const menuItems = document.querySelectorAll('.menu-item');
+    const radius = 120;
+    menuItems.forEach((item, index) => {
+      const angle = (index / menuItems.length) * Math.PI * 2 - Math.PI / 2;
+      const x = Math.cos(angle) * radius;
+      const y = Math.sin(angle) * radius;
+      item.style.transform = `translate(${x}px, ${y}px)`;
+      item.dataset.x = x;
+      item.dataset.y = y;
+    });
+
+    // === BACKGROUND PARTICLES ===
+    let bgParticlesArr = [];
+    function initBgParticles() {
+      bgParticlesArr = [];
+      for(let i=0; i<80; i++) {
+        bgParticlesArr.push({
+          x: Math.random() * bgCanvas.width,
+          y: Math.random() * bgCanvas.height,
+          size: Math.random() * 2 + 0.5,
+          speedY: -(Math.random() * 0.5 + 0.1),
+          speedX: (Math.random() - 0.5) * 0.2,
+          opacity: Math.random() * 0.5 + 0.1,
+          color: Math.random() > 0.5 ? '#00f3ff' : '#b026ff'
+        });
+      }
+    }
+    
+    function drawBgParticles() {
+      bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
+      bgParticlesArr.forEach(p => {
+        p.y += p.speedY;
+        p.x += p.speedX;
+        if (p.y < -10) p.y = bgCanvas.height + 10;
+        if (p.x < -10) p.x = bgCanvas.width + 10;
+        if (p.x > bgCanvas.width + 10) p.x = -10;
+        
+        bgCtx.globalAlpha = p.opacity;
+        bgCtx.fillStyle = p.color;
+        bgCtx.shadowBlur = 5;
+        bgCtx.shadowColor = p.color;
+        bgCtx.beginPath();
+        bgCtx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+        bgCtx.fill();
+      });
+      bgCtx.globalAlpha = 1;
+      bgCtx.shadowBlur = 0;
+    }
+
+    // === CLASSES ===
+    class Spark {
+      constructor(x, y, color) {
+        this.x = x; this.y = y;
+        this.vx = (Math.random() - 0.5) * 8;
+        this.vy = (Math.random() - 0.5) * 8;
+        this.life = 1.0;
+        this.color = color;
+      }
+      update() {
+        this.x += this.vx; this.y += this.vy;
+        this.vy += 0.2; // Gravity
+        this.life -= 0.04;
+      }
+      draw(ctx) {
+        ctx.globalAlpha = Math.max(0, this.life);
+        ctx.fillStyle = '#fff';
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, 2.5 * this.life, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+
+    class Drawing {
+      constructor(color) {
+        this.points = [];
+        this.color = color;
+        this.x = 0; this.y = 0;
+        this.scale = 1;
+        this.rotation = 0;
+        this.selected = false;
+        this.width = 0; this.height = 0;
+      }
+
+      addPoint(x, y) { this.points.push({x, y}); }
+
+      finalize() {
+        if (this.points.length === 0) return;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (let p of this.points) {
+          if (p.x < minX) minX = p.x;
+          if (p.y < minY) minY = p.y;
+          if (p.x > maxX) maxX = p.x;
+          if (p.y > maxY) maxY = p.y;
+        }
+        this.x = (minX + maxX) / 2;
+        this.y = (minY + maxY) / 2;
+        this.width = Math.max(maxX - minX, 30);
+        this.height = Math.max(maxY - minY, 30);
+        for (let p of this.points) { p.x -= this.x; p.y -= this.y; }
+      }
+
+      draw(ctx) {
+        if (this.points.length === 0) return;
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.rotation);
+        ctx.scale(this.scale, this.scale);
+
+        // Hover / Select glow
+        if (this.selected) {
+          ctx.shadowColor = '#fff';
+          ctx.shadowBlur = 25;
+        } else {
+          ctx.shadowColor = this.color;
+          ctx.shadowBlur = 12;
+        }
+
+        ctx.strokeStyle = this.selected ? '#fff' : this.color;
+        ctx.lineWidth = this.selected ? 8 : 6;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        ctx.beginPath();
+        ctx.moveTo(this.points[0].x, this.points[0].y);
+        for (let i = 1; i < this.points.length - 1; i++) {
+          let xc = (this.points[i].x + this.points[i+1].x) / 2;
+          let yc = (this.points[i].y + this.points[i+1].y) / 2;
+          ctx.quadraticCurveTo(this.points[i].x, this.points[i].y, xc, yc);
+        }
+        let last = this.points.length - 1;
+        if (last > 0) ctx.lineTo(this.points[last].x, this.points[last].y);
+        ctx.stroke();
+
+        // UI Helpers
+        if (appMode === 'SCALE' && this.selected) {
+          ctx.strokeStyle = 'rgba(0, 243, 255, 0.6)';
+          ctx.lineWidth = 2 / this.scale;
+          ctx.setLineDash([10 / this.scale, 10 / this.scale]);
+          ctx.strokeRect(-this.width/2 - 20, -this.height/2 - 20, this.width + 40, this.height + 40);
+          ctx.setLineDash([]);
+        }
+        if (appMode === 'ROTATE' && this.selected) {
+          ctx.strokeStyle = 'rgba(176, 38, 255, 0.6)';
+          ctx.lineWidth = 2 / this.scale;
+          ctx.setLineDash([5 / this.scale, 10 / this.scale]);
+          ctx.beginPath();
+          ctx.arc(0, 0, Math.max(this.width, this.height) / 2 + 30, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        ctx.restore();
+      }
+    }
+
+    // === HELPER FUNCTIONS ===
+    function setMode(mode) {
+      appMode = mode;
+      hudMode.innerText = mode;
+      hudMode.className = 'hud-value ' + (mode === 'ERASE' || mode === 'ROTATE' ? 'magenta' : '');
+      modeDisplay.innerText = mode;
+      sounds.menuSelect();
+      
+      // Update menu visual
+      menuItems.forEach(item => {
+        if (item.dataset.tool === mode) item.classList.add('active-tool');
+        else item.classList.remove('active-tool');
+      });
+
+      // Show badge
+      showBadge(`MODE: ${mode}`);
+    }
+
+    function showBadge(text) {
+      gestureBadge.innerText = text;
+      gestureBadge.classList.add('show');
+      setTimeout(() => gestureBadge.classList.remove('show'), 1500);
+    }
+
+    function createRipple(x, y) {
+      const ripple = document.createElement('div');
+      ripple.className = 'ripple';
+      ripple.style.left = x + 'px';
+      ripple.style.top = y + 'px';
+      document.body.appendChild(ripple);
+      setTimeout(() => ripple.remove(), 600);
+    }
+
+    function getDistance(p1, p2) { return Math.hypot(p1.x - p2.x, p1.y - p2.y); }
+    function getAngle(p1, p2) { return Math.atan2(p2.y - p1.y, p2.x - p1.x); }
+
+    function findObjectAt(x, y) {
+      for (let i = drawings.length - 1; i >= 0; i--) {
+        let d = drawings[i];
+        let dx = x - d.x; let dy = y - d.y;
+        let cos = Math.cos(-d.rotation); let sin = Math.sin(-d.rotation);
+        let lx = dx * cos - dy * sin;
+        let ly = dx * sin + dy * cos;
+        lx /= d.scale; ly /= d.scale;
+        if (lx > -d.width/2 - 25 && lx < d.width/2 + 25 && ly > -d.height/2 - 25 && ly < d.height/2 + 25) {
+          return d;
+        }
+      }
+      return null;
+    }
+
+    // === RENDER LOOP ===
+    function render() {
+      // FPS
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFrameTime >= 1000) {
+        hudFps.innerText = frameCount;
+        frameCount = 0;
+        lastFrameTime = now;
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawBgParticles();
+      
+      // Inertia / Friction for drag
+      if (!isDragging && activeObject && appMode === 'MOVE') {
+        activeObject.x += dragVelocity.x;
+        activeObject.y += dragVelocity.y;
+        dragVelocity.x *= 0.85; // Friction
+        dragVelocity.y *= 0.85;
+        if (Math.hypot(dragVelocity.x, dragVelocity.y) < 0.5) activeObject = null;
+      }
+
+      // Draw objects
+      drawings.forEach(d => d.draw(ctx));
+
+      // Draw active stroke
+      if (currentDrawing) {
+        ctx.save();
+        ctx.strokeStyle = currentDrawing.color;
+        ctx.lineWidth = 6;
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        ctx.shadowColor = currentDrawing.color; ctx.shadowBlur = 15;
+        ctx.beginPath();
+        let pts = currentDrawing.points;
+        if (pts.length > 0) {
+          ctx.moveTo(pts[0].x, pts[0].y);
+          for (let i = 1; i < pts.length - 1; i++) {
+            let xc = (pts[i].x + pts[i+1].x) / 2;
+            let yc = (pts[i].y + pts[i+1].y) / 2;
+            ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
+          }
+          if (pts.length > 1) ctx.lineTo(pts[pts.length-1].x, pts[pts.length-1].y);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Particles
+      ctx.globalAlpha = 1.0;
+      for (let i = particles.length - 1; i >= 0; i--) {
+        particles[i].update();
+        particles[i].draw(ctx);
+        if (particles[i].life <= 0) particles.splice(i, 1);
+      }
+
+      // Cursor update
+      cursorContainer.style.left = cursorX + 'px';
+      cursorContainer.style.top = cursorY + 'px';
+
+      requestAnimationFrame(render);
+    }
+    render();
+
+    // === HAND PROCESSING ===
+    function processResults(results) {
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        cursorContainer.style.display = 'block';
+        
+        let hand = results.multiHandLandmarks[0];
+        let indexTip = hand[8];
+        let thumbTip = hand[4];
+        
+        // Raw coords (Mirrored)
+        let rawX = (1 - indexTip.x) * canvas.width;
+        let rawY = indexTip.y * canvas.height;
+
+        // Exponential Moving Average Smoothing
+        let dx = rawX - cursorX;
+        let dy = rawY - cursorY;
+        if (Math.hypot(dx, dy) > DEADZONE) {
+          cursorX += dx * SMOOTHING;
+          cursorY += dy * SMOOTHING;
+        }
+
+        // Gesture Detection
+        let pinchDist = getDistance(indexTip, thumbTip);
+        let isOpen = getDistance(hand[8], hand[0]) > 0.4 && getDistance(hand[12], hand[0]) > 0.4 && getDistance(hand[20], hand[0]) > 0.4;
+        
+        // Debounce pinch
+        if (pinchDist < 0.05) pinchFrames++; else pinchFrames = 0;
+        let currentPinch = pinchFrames > 1;
+
+        // Update HUD
+        if (currentPinch) { hudGesture.innerText = 'PINCH'; hudGesture.style.color = 'var(--neon-purple)'; }
+        else if (isOpen) { hudGesture.innerText = 'OPEN HAND'; hudGesture.style.color = 'var(--neon-cyan)'; }
+        else { hudGesture.innerText = 'TRACKING'; hudGesture.style.color = '#fff'; }
+
+        // Pinch State Change
+        if (currentPinch && !wasPinching) {
+          cursorContainer.classList.add('pinching');
+          createRipple(cursorX, cursorY);
+          sounds.blip();
+        } else if (!currentPinch && wasPinching) {
+          cursorContainer.classList.remove('pinching');
+          createRipple(cursorX, cursorY);
+          if (appMode === 'MOVE' && activeObject) sounds.release();
+        }
+
+        // --- MENU LOGIC ---
+        let moveDist = Math.hypot(cursorX - lastHandPos.x, cursorY - lastHandPos.y);
+        if (moveDist < 5 && !currentPinch && !menuActive) {
+          handStillTime++;
+          if (handStillTime > 30) { // Approx 1 second
+            menuActive = true;
+            menuCenter = {x: cursorX, y: cursorY};
+            radialMenu.style.left = cursorX + 'px';
+            radialMenu.style.top = cursorY + 'px';
+            radialMenu.classList.add('active');
+            sounds.menuOpen();
+            showBadge('MENU OPEN');
+          }
+        } else if (moveDist >= 5) {
+          handStillTime = 0;
+        }
+        lastHandPos = {x: cursorX, y: cursorY};
+
+        if (menuActive) {
+          // Check hover
+          let hoveredItem = null;
+          menuItems.forEach(item => {
+             let ix = menuCenter.x + parseFloat(item.dataset.x);
+             let iy = menuCenter.y + parseFloat(item.dataset.y);
+             if (Math.hypot(cursorX - ix, cursorY - iy) < 40) {
+               item.classList.add('hovered');
+               hoveredItem = item;
+             } else {
+               item.classList.remove('hovered');
+             }
+          });
+
+          // Select
+          if (currentPinch && !wasPinching && hoveredItem) {
+            if (hoveredItem.dataset.tool) setMode(hoveredItem.dataset.tool);
+            else if (hoveredItem.dataset.action === 'CLEAR') { drawings = []; showBadge('CLEARED'); sounds.error(); }
+            else if (hoveredItem.dataset.action === 'SAVE') { showBadge('SAVED (Simulated)'); sounds.blip(); }
+            menuActive = false;
+            radialMenu.classList.remove('active');
+          }
+          
+          // Close menu if move far away
+          if (Math.hypot(cursorX - menuCenter.x, cursorY - menuCenter.y) > 200) {
+            menuActive = false;
+            radialMenu.classList.remove('active');
+            menuItems.forEach(i => i.classList.remove('hovered'));
+          }
+
+          wasPinching = currentPinch;
+          return; // Block other actions while menu open
+        }
+
+        // --- TOOL LOGIC ---
+        // Hover effect for objects
+        if (!currentPinch && !isDragging) {
+           let hoverObj = findObjectAt(cursorX, cursorY);
+           drawings.forEach(d => d.selected = (d === hoverObj));
+        }
+
+        if (appMode === 'DRAW') {
+          if (currentPinch) {
+            if (!currentDrawing) currentDrawing = new Drawing('#00f3ff');
+            currentDrawing.addPoint(cursorX, cursorY);
+            if(Math.random() > 0.5) particles.push(new Spark(cursorX, cursorY, '#00f3ff'));
+          } else if (currentDrawing) {
+            currentDrawing.finalize();
+            drawings.push(currentDrawing);
+            currentDrawing = null;
+          }
+        }
+        
+        else if (appMode === 'ERASE') {
+          if (isOpen) {
+            let obj = findObjectAt(cursorX, cursorY);
+            if (obj) {
+              drawings = drawings.filter(d => d !== obj);
+              for(let i=0; i<25; i++) particles.push(new Spark(cursorX, cursorY, '#b026ff'));
+              sounds.error();
+            }
+            if(Math.random() > 0.8) particles.push(new Spark(cursorX, cursorY, '#ff0055'));
+          }
+        }
+
+        else if (appMode === 'MOVE') {
+          if (currentPinch) {
+            if (!isDragging) {
+              activeObject = findObjectAt(cursorX, cursorY);
+              if (activeObject) {
+                isDragging = true;
+                activeObject.selected = true;
+                grabOffset = { x: activeObject.x - cursorX, y: activeObject.y - cursorY };
+                lastGrabPos = { x: cursorX, y: cursorY };
+                sounds.grab();
+              }
+            } else if (activeObject) {
+              activeObject.x = cursorX + grabOffset.x;
+              activeObject.y = cursorY + grabOffset.y;
+              dragVelocity = { x: cursorX - lastGrabPos.x, y: cursorY - lastGrabPos.y };
+              lastGrabPos = { x: cursorX, y: cursorY };
+            }
+          } else {
+            if (isDragging) {
+              isDragging = false;
+              if (activeObject) activeObject.selected = false;
+            }
+          }
+        }
+
+        // Two-hand interactions (Scale / Rotate)
+        if ((appMode === 'SCALE' || appMode === 'ROTATE') && results.multiHandLandmarks.length >= 2) {
+          let hand2 = results.multiHandLandmarks[1];
+          let h2Pinch = getDistance(hand2[8], hand2[4]) < 0.05;
+          let h2X = (1 - hand2[8].x) * canvas.width;
+          let h2Y = hand2[8].y * canvas.height;
+
+          if (currentPinch && h2Pinch) {
+             let center = { x: (cursorX + h2X)/2, y: (cursorY + h2Y)/2 };
+             if (!activeObject) activeObject = findObjectAt(center.x, center.y);
+             
+             if (activeObject) {
+               activeObject.selected = true;
+               let currentDist = Math.hypot(cursorX - h2X, cursorY - h2Y);
+               let currentAngle = getAngle({x: cursorX, y: cursorY}, {x: h2X, y: h2Y});
+
+               if (appMode === 'SCALE') {
+                 if (!initialScaleDist) { initialScaleDist = currentDist; activeObject.initialScale = activeObject.scale; sounds.grab(); }
+                 activeObject.scale = activeObject.initialScale * (currentDist / initialScaleDist);
+               } else if (appMode === 'ROTATE') {
+                 if (initialRotationAngle === null) { initialRotationAngle = currentAngle; activeObject.initialRot = activeObject.rotation; sounds.grab(); }
+                 activeObject.rotation = activeObject.initialRot + (currentAngle - initialRotationAngle);
+               }
+             }
+          } else {
+             initialScaleDist = null;
+             initialRotationAngle = null;
+             if (activeObject) { activeObject.selected = false; activeObject = null; }
+          }
+        }
+
+        wasPinching = currentPinch;
+      } else {
+        // No hands
+        cursorContainer.style.display = 'none';
+        hudGesture.innerText = 'NO SIGNAL';
+        hudGesture.style.color = 'rgba(255,0,0,0.8)';
+        if (currentDrawing) { currentDrawing.finalize(); drawings.push(currentDrawing); currentDrawing = null; }
+        if (isDragging) { isDragging = false; if(activeObject) activeObject.selected = false; }
+        wasPinching = false;
+        menuActive = false;
+        radialMenu.classList.remove('active');
+        initialScaleDist = null;
+        initialRotationAngle = null;
+      }
+    }
+
+    // === MEDIA PIPE SETUP ===
+    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.7
+    });
+    hands.onResults(processResults);
+
+    const camera = new Camera(video, {
+      onFrame: async () => { await hands.send({image: video}); },
+      width: 1280, height: 720, facingMode: "user"
+    });
+    
+    camera.start().then(() => {
+        const loadScreen = document.getElementById("loading");
+        loadScreen.style.opacity = 0;
+        setTimeout(() => loadScreen.style.display = 'none', 800);
+    }).catch(err => {
+        document.getElementById("loading").innerHTML = `<h2 style="color:red; font-family:var(--font-display);">SENSOR ERROR</h2><p>${err.message}</p>`;
+    });
+
+  </script>
+</body>
+</html>
