@@ -383,20 +383,28 @@
 
   </style>
 
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-
   <!-- Global error handler to help debug on mobile -->
   <script>
     window.addEventListener('error', function(e) {
         let loading = document.getElementById("loading");
-        if(loading) loading.innerHTML = `<h2 style="color: red; font-size:16px;">Error: ${e.message}</h2>`;
+        if(loading) {
+            loading.innerHTML = `<h2 style="color: red; font-size:16px;">Error: ${e.message}</h2>`;
+            loading.style.opacity = 1;
+            loading.style.display = "flex";
+        }
     });
     window.addEventListener('unhandledrejection', function(e) {
         let loading = document.getElementById("loading");
-        if(loading) loading.innerHTML = `<h2 style="color: red; font-size:16px;">Promise Error: ${e.reason}</h2>`;
+        if(loading) {
+            loading.innerHTML = `<h2 style="color: red; font-size:16px;">Promise Error: ${e.reason}</h2>`;
+            loading.style.opacity = 1;
+            loading.style.display = "flex";
+        }
     });
   </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 </head>
 <body>
 
@@ -473,57 +481,18 @@
   </div>
 
   <script>
-    // === AUDIO SYSTEM (Web Audio API) ===
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    let audioCtx = null;
-    try {
-      if (AudioContext) audioCtx = new AudioContext();
-    } catch(e) {
-      console.warn("AudioContext failed to initialize", e);
-    }
-
-    const sounds = {
-      blip: () => playOscillator('sine', 800, 0.05, 'exponential', 0.1),
-      grab: () => playOscillator('triangle', 300, 0.1, 'linear', 0.2),
-      release: () => playOscillator('sine', 200, 0.2, 'exponential', 0.3, 100),
-      menuOpen: () => playOscillator('square', 600, 0.1, 'linear', 0.4, 800),
-      menuSelect: () => playOscillator('sine', 1200, 0.05, 'exponential', 0.2),
-      error: () => playOscillator('sawtooth', 150, 0.2, 'linear', 0.2, 100)
-    };
-
-    function playOscillator(type, freq, vol, fadeType, duration, endFreq = null) {
-      if (!audioCtx) return;
-      if (audioCtx.state === 'suspended') audioCtx.resume();
-      const osc = audioCtx.createOscillator();
-      const gainNode = audioCtx.createGain();
-      osc.type = type;
-      osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-      if (endFreq) {
-        osc.frequency.exponentialRampToValueAtTime(endFreq, audioCtx.currentTime + duration);
-      }
-      gainNode.gain.setValueAtTime(vol, audioCtx.currentTime);
-      if (fadeType === 'exponential') {
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-      } else {
-        gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + duration);
-      }
-      osc.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-      osc.start();
-      osc.stop(audioCtx.currentTime + duration);
-    }
-
-    // === STATE & CONFIG ===
+    // === GLOBAL VARIABLES DECLARED FIRST TO AVOID REFERENCE ERRORS ===
     let appMode = 'DRAW'; // DRAW, ERASE, MOVE, SCALE, ROTATE
     let drawings = [];
     let currentDrawing = null;
     let activeObject = null;
     let particles = [];
+    let bgParticlesArr = []; // <-- Fixed: Declared at the very top!
     
     // Smoothing & Hand Tracking
     let cursorX = window.innerWidth / 2;
     let cursorY = window.innerHeight / 2;
-    const SMOOTHING = 0.35; // Lower = smoother, higher = more responsive
+    const SMOOTHING = 0.35; 
     const DEADZONE = 3;
     let isPinching = false;
     let wasPinching = false;
@@ -543,6 +512,10 @@
     let lastHandPos = {x: cursorX, y: cursorY};
     let menuCenter = {x: 0, y: 0};
 
+    // FPS Counter
+    let lastFrameTime = performance.now();
+    let frameCount = 0;
+
     // DOM Elements
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
@@ -557,35 +530,42 @@
     const radialMenu = document.getElementById("radial-menu");
     const gestureBadge = document.getElementById("gesture-badge");
 
-    // FPS Counter
-    let lastFrameTime = performance.now();
-    let frameCount = 0;
-
-    // === INITIALIZATION ===
-    function resize() {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      bgCanvas.width = window.innerWidth;
-      bgCanvas.height = window.innerHeight;
-      initBgParticles();
+    // === AUDIO SYSTEM ===
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null;
+    try {
+      if (AudioContext) audioCtx = new AudioContext();
+    } catch(e) {
+      console.warn("AudioContext init error", e);
     }
-    window.addEventListener('resize', resize);
-    resize();
 
-    // Setup Radial Menu Positions
-    const menuItems = document.querySelectorAll('.menu-item');
-    const radius = 120;
-    menuItems.forEach((item, index) => {
-      const angle = (index / menuItems.length) * Math.PI * 2 - Math.PI / 2;
-      const x = Math.cos(angle) * radius;
-      const y = Math.sin(angle) * radius;
-      item.style.transform = `translate(${x}px, ${y}px)`;
-      item.dataset.x = x;
-      item.dataset.y = y;
-    });
+    const sounds = {
+      blip: () => playOscillator('sine', 800, 0.05, 'exponential', 0.1),
+      grab: () => playOscillator('triangle', 300, 0.1, 'linear', 0.2),
+      release: () => playOscillator('sine', 200, 0.2, 'exponential', 0.3, 100),
+      menuOpen: () => playOscillator('square', 600, 0.1, 'linear', 0.4, 800),
+      menuSelect: () => playOscillator('sine', 1200, 0.05, 'exponential', 0.2),
+      error: () => playOscillator('sawtooth', 150, 0.2, 'linear', 0.2, 100)
+    };
+
+    function playOscillator(type, freq, vol, fadeType, duration, endFreq = null) {
+      if (!audioCtx) return;
+      if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+      const osc = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+      if (endFreq) osc.frequency.exponentialRampToValueAtTime(endFreq, audioCtx.currentTime + duration);
+      gainNode.gain.setValueAtTime(vol, audioCtx.currentTime);
+      if (fadeType === 'exponential') gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+      else gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + duration);
+      osc.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration);
+    }
 
     // === BACKGROUND PARTICLES ===
-    let bgParticlesArr = [];
     function initBgParticles() {
       bgParticlesArr = [];
       for(let i=0; i<80; i++) {
@@ -621,6 +601,29 @@
       bgCtx.globalAlpha = 1;
       bgCtx.shadowBlur = 0;
     }
+
+    // === INITIALIZATION ===
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      bgCanvas.width = window.innerWidth;
+      bgCanvas.height = window.innerHeight;
+      initBgParticles();
+    }
+    window.addEventListener('resize', resize);
+    resize(); // Safe to call now because bgParticlesArr is declared at the top!
+
+    // Setup Radial Menu Positions
+    const menuItems = document.querySelectorAll('.menu-item');
+    const radius = 120;
+    menuItems.forEach((item, index) => {
+      const angle = (index / menuItems.length) * Math.PI * 2 - Math.PI / 2;
+      const x = Math.cos(angle) * radius;
+      const y = Math.sin(angle) * radius;
+      item.style.transform = `translate(${x}px, ${y}px)`;
+      item.dataset.x = x;
+      item.dataset.y = y;
+    });
 
     // === CLASSES ===
     class Spark {
@@ -1065,7 +1068,9 @@
         loadScreen.style.opacity = 0;
         setTimeout(() => loadScreen.style.display = 'none', 800);
     }).catch(err => {
-        document.getElementById("loading").innerHTML = `<h2 style="color:red; font-family:var(--font-display);">SENSOR ERROR</h2><p>${err.message}</p>`;
+        let loading = document.getElementById("loading");
+        loading.innerHTML = `<h2 style="color:red; font-family:var(--font-display);">SENSOR ERROR</h2><p>${err.message}</p>`;
+        loading.style.opacity = 1;
     });
 
   </script>
